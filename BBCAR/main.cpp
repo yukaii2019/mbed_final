@@ -6,8 +6,10 @@ Ticker encoder_ticker1;
 Ticker encoder_ticker2;
 
 Timer debounc_sw2;
+Timer debounc_sw3;
 Timer Turntimer;
 Timer leastTimer;
+Timer datamatrixTimer;
 
 Serial pc(USBTX,USBRX); //tx,rx
 Serial xbee(D12, D11);
@@ -15,6 +17,7 @@ PwmOut pin8(D8);
 PwmOut pin9(D9);
 DigitalIn pin3(D3);
 DigitalIn pin4(D4);
+DigitalOut ledRED(D7);
 DigitalInOut pin10(D10); //ping
 BBCar car(pin9, pin8, servo_ticker);
 parallax_encoder encoder_right(pin3, encoder_ticker1);
@@ -22,58 +25,65 @@ parallax_encoder encoder_left (pin4, encoder_ticker2);
 parallax_ping ping(pin10);
 
 InterruptIn sw2(SW2);
+InterruptIn sw3(SW3);
 Serial uart(D1,D0); //tx,rx
-DigitalInOut led(LED3);
-Thread carThread(osPriorityNormal);
-Thread xbeeThread(osPriorityHigh);
+DigitalOut led(LED3);
+Thread endThread(osPriorityNormal);
+Thread carThread(osPriorityHigh);
+Thread xbeeThread(osPriorityHigh2);
+Thread pingThread(osPriorityHigh1);
+Thread LEDThread(osPriorityHigh);
 EventQueue carQueue(32* EVENTS_EVENT_SIZE);
 EventQueue xbeeQueue(32* EVENTS_EVENT_SIZE);
+EventQueue endQueue(32* EVENTS_EVENT_SIZE);
+EventQueue pingQueue(32* EVENTS_EVENT_SIZE);
+EventQueue LEDQueue(32* EVENTS_EVENT_SIZE);
 void Car_Go();
 void call_Car_Go();
-void first_straight();
-void first_turn();
-void second_straight();
-void back_turn();
-void first_identify_number();
-void back_to_lot();
-void second_identify_number();
-void third_straight();
-void turn2();
-void straght4();
-void turn3();
-void straght5();
-void turn4();
+
 void xbeeSend();
 
-void straight();
-void turn_left_or_right();
+void straight(float dist_upperbound,float dist_lowerbound,float speed,float least_time,int ping_use);
+void straight2(float speed,float least_time,float distance,int ping_use);
+void turn_left_or_right(float dist_upperbound,float dist_lowerbound,float speed,int factor,float least_time,int ping_use);
 void identify_data_matrix();
 void identify_number();
+void identify_object(int t);
+void cal_result();
+void end_car();
+void call_end_car();
+void ping_function();
+void led_function();
+void encoder_turn(float speed ,int left,int step);
 
-int massege_order = 0;
-float posx=0,posy=0,nowtime=0;
-int status = 1;
-float now_speed = 0;;
+int status = 5;
+float now_speed = 0;
+float distance_1;
+float distance_2;
+float distance_3;
+float now_ping = 0;
+int led_mode = 2;
 char number[6];
 char payload[10];
 char rotation_char[10];
+char object[50];
 
 void xbeeSend(){
     while(1){
         if(status==1){
-            xbee.printf("Go straight,       Distance to wall is %f,     Speed is %f#",(float)ping,now_speed);
+            xbee.printf("Go straight,       Distance to wall is %f,     Speed is %f#",now_ping,now_speed);
         }
         else if (status == 2){
-            xbee.printf("Straight backward, Distance to wall is %f,     Speed is %f#",(float)ping,now_speed);
+            xbee.printf("Straight backward, Distance to wall is %f,     Speed is %f#",now_ping,now_speed);
         }
         else if (status == 3){
-            xbee.printf("Turn left,         Distance to wall is %f,     Speed is %f#",(float)ping,now_speed);
+            xbee.printf("Turn left,         Distance to wall is %f,     Speed is %f#",now_ping,now_speed);
         }
         else if (status == 4){
-            xbee.printf("Turn right,        Distance to wall is %f,     Speed is %f#",(float)ping,now_speed);
+            xbee.printf("Turn right,        Distance to wall is %f,     Speed is %f#",now_ping,now_speed);
         }
         else if (status == 5){
-            xbee.printf("Stop,              Distance to wall is ,       Speed Is 0#",(float)ping);
+            xbee.printf("Stop,              Distance to wall is %f,     Speed Is 0#",now_ping);
         }
         else if (status == 6){
             xbee.printf("identifying data matrix#");
@@ -87,19 +97,151 @@ void xbeeSend(){
         else if (status == 9){
             xbee.printf("number is %s#",number);
         }
+        else if (status == 10){
+            xbee.printf("finish#");
+        }
+        else if (status == 11){
+            xbee.printf("Object is %s#",object);
+        }
+        else if (status == 12){
+            xbee.printf("Identify object distance_1 is %f#",distance_1);
+        }
+        else if (status == 13){
+            xbee.printf("back left,         Distance to wall is %f,     Speed is %f#",now_ping,now_speed);
+        }
+        else if (status == 14){
+            xbee.printf("back right,        Distance to wall is %f,     Speed is %f#",now_ping,now_speed);
+        }
+        else if (status == 15){
+            xbee.printf("Identify object distance_2 is %f#",distance_2);
+        }
+        else if (status == 16){
+            xbee.printf("Identify object distance_3 is %f#",distance_3);
+        }
         wait(1);
     }
 }
+void encoder_turn(float speed ,int left,int step){
+    led_mode = 1;
+    LEDQueue.call(led_function);
+    //status = (left == 1)?3:4;
+    status = (left == 1)?(speed>0)?3:13:(speed>0)?4:14;
+    wait(0.05);
+    now_speed = abs(speed);
+    encoder_right.reset();
+    encoder_left.reset();
+    if(left == 1){
+        car.turn(speed,1);
+        while(1){
+            if(encoder_right.get_steps()>=step){
+                break;
+            }
+            wait(0.05);
+        }
+    }
+    else {
+        car.turn(speed,-1);
+        while(1){
+            if(encoder_left.get_steps()>=step){
+                break;
+            }
+            wait(0.05);
+        }
+    }
+    car.stop();
+    led_mode = 2;
+    LEDQueue.call(led_function);
+    status = 5;
+    wait(0.05);
+    
+}
+void led_function(){
+    if(led_mode == 1){
+        ledRED = 1;
+    }
+    else if (led_mode == 2){
+        ledRED = 0;
+    }
+    else if(led_mode == 3){
+        while(led_mode == 3){
+            ledRED = 1;
+            wait(0.3);
+            ledRED = 0;
+            wait(0.3);
+        }
+    }
+}
+void ping_function(){
+    while(1){
+        now_ping = (float)ping;
+        wait(0.05);
+    }
+}
+void cal_result(){
+    if(distance_1<20){
+        sprintf(object,"Square");
+    }
+    else{
+        if(distance_2-distance_3<3||distance_3-distance_2<3){
+            if(distance_2>30||distance_3>30){
+                sprintf(object,"square minus regular triangle");
+            }
+            else {
+                sprintf(object,"Regular triangle");
+            }
+        }
+        else{
+            sprintf(object,"Right triangle");
+        }
+    }
+    wait(0.2);
+    status = 11;
+    wait(0.05);
+    
+}
+void identify_object(int t){
+    if(t == 1){
+        distance_1 = now_ping;
+        wait(0.2);
+        status = 12;
+        wait(0.05);
+    }
+    else if(t == 2){
+        distance_2 = now_ping;
+        wait(0.2);
+        status = 15;
+        wait(0.05);
+    }
+    else if(t == 3){
+        distance_3 = now_ping;
+        wait(0.2);
+        status = 16;
+        wait(0.05);
+    }
+}
 void identify_number(){
+    led_mode = 3;
+    wait(0.05);
+    LEDQueue.call(led_function);
     char s[21];
     status = 7;
     sprintf(s,"numberclassification");
     uart.puts(s);
     int i = 0;
+    datamatrixTimer.reset();
+    datamatrixTimer.start();
     while(1){
+        if(datamatrixTimer.read()>=7){
+            number[0] = 'f';
+            number[1] = 'a';
+            number[2] = 'i';
+            number[3] = 'l';
+            number[4] = '\0';
+            break;
+        }
         if(uart.readable()){
             char recv = uart.getc();
-            pc.printf("%c",recv);
+            //pc.printf("%c",recv);
             if(recv!='#'){
                 number[i] = recv;
             }
@@ -111,20 +253,35 @@ void identify_number(){
         }
     }
     status = 9;
-    pc.printf("%s\r\n",number);
+    wait(0.05);
+    led_mode = 2;
+    LEDQueue.call(led_function);
+    //pc.printf("%s\r\n",number);
 }
 void identify_data_matrix(){
+    led_mode = 3;
+    wait(0.05);
+    LEDQueue.call(led_function);
     char s[21];
     status =6;
     sprintf(s,"data_matrix_classify");
     uart.puts(s);
     //float rotation;
-
+    datamatrixTimer.reset();
+    datamatrixTimer.start();
     int i = 0;
     while(1){
+        if(datamatrixTimer.read()>=7){
+            payload[0] = 'f';
+            payload[1] = 'a';
+            payload[2] = 'i';
+            payload[3] = 'l';
+            payload[4] = '\0';
+            break;
+        }
         if(uart.readable()){
             char recv = uart.getc();
-            pc.printf("%c",recv);
+            //pc.printf("%c",recv);
             if(recv!='#'){
                 payload[i] = recv;
             }
@@ -136,11 +293,20 @@ void identify_data_matrix(){
         }
     }                
     i = 0;
-
+    datamatrixTimer.reset();
+    datamatrixTimer.start();
     while(1){
+        if(datamatrixTimer.read()>=7){
+            rotation_char[0] = 'f';
+            rotation_char[1] = 'a';
+            rotation_char[2] = 'i';
+            rotation_char[3] = 'l';
+            rotation_char[4] = '\0';
+            break;
+        }
         if(uart.readable()){
             char recv = uart.getc();
-            pc.printf("%c",recv);
+            //pc.printf("%c",recv);
             if(recv!='#'){
                 rotation_char[i] = recv;
             }
@@ -151,16 +317,74 @@ void identify_data_matrix(){
             i++;          
         }
     }
-    pc.printf("%s , %s\r\n",payload,rotation_char);
+    //pc.printf("%s , %s\r\n",payload,rotation_char);
+    led_mode = 2;
+    LEDQueue.call(led_function);
     status = 8;
+    wait(0.05);
+    /*
     if(strcmp("fail",payload) == 0){
-        pc.printf("fail\r\n");
+        //pc.printf("fail\r\n");
     }
     else {
-        pc.printf("%s , %f\r\n",payload,atof(rotation_char));
-    }
+        //pc.printf("%s , %f\r\n",payload,atof(rotation_char));
+    }*/
 }
-void straight(float dist_upperbound,float dist_lowerbound,float speed,float least_time){
+void straight2(float speed,float least_time,float distance,int ping_use,int step){
+    led_mode = 1;
+    wait(0.05);
+    LEDQueue.call(led_function);
+    now_speed = speed;
+    status = (speed>0)?1:2;
+    leastTimer.reset();
+    leastTimer.start();
+    encoder_left.reset();
+    encoder_right.reset();
+    car.goStraight(speed);
+    if(ping_use == 0){
+        while(1){
+            if(leastTimer.read()>least_time){
+                break;
+            }
+            wait(0.01);
+        }
+    }
+    else if (ping_use == 1){
+        if(speed>0){
+            while(1){
+                if(now_ping<distance){
+                    break;
+                }
+                wait(0.05);
+            }
+        }
+        else if(speed<0){
+            while(1){
+                if(now_ping>distance){
+                    break;
+                }
+                wait(0.05);
+            }
+        }
+    }
+    else if (ping_use ==2){
+        while(1){
+            if(encoder_right.get_steps()>=step){
+                break;
+            }
+            wait(0.05);
+        }
+    }
+    car.stop();
+    led_mode = 2;
+    LEDQueue.call(led_function);
+    status = 5;
+    wait(0.05);
+}
+void straight(float dist_upperbound,float dist_lowerbound,float speed,float least_time,int ping_use){
+    led_mode = 1;
+    LEDQueue.call(led_function);
+
     now_speed = speed;
     status = (speed>0)?1:2;
     float p[10];
@@ -172,34 +396,44 @@ void straight(float dist_upperbound,float dist_lowerbound,float speed,float leas
     leastTimer.start();
     car.goStraight(speed);
     while(leastTimer.read()<least_time){
-
-    }
-    while(1){
-        for(int i=0;i<10;i++){
-            if(i==9){
-                p[i] = (float)ping;
-                if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
-                    p_in_range+=1;
-                }
-            }
-            else {
-                p[i] = p[i+1];
-                if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
-                    p_in_range+=1;
-                }
-            }
-        }
-        if(p_in_range == 10){
-            car.stop();
-            now_speed = 0;
-            break;
-        }
-        p_in_range = 0;
         wait(0.01);
     }
+    if(ping_use == 1){
+        while(1){
+            for(int i=0;i<10;i++){
+                if(i==9){
+                    //p[i] = (float)ping;
+                    p[i] = now_ping;
+                    if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
+                        p_in_range+=1;
+                    }
+                }
+                else {
+                    p[i] = p[i+1];
+                    if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
+                        p_in_range+=1;
+                    }
+                }
+            } 
+            if(p_in_range == 10){ 
+                car.stop();
+                now_speed = 0;
+                break;
+            }
+            p_in_range = 0;
+            wait(0.01);
+        }
+    }
+    else if(ping_use==0){
+        car.stop();
+    }
+    led_mode = 2;
+    LEDQueue.call(led_function);
     status = 5;
 }
-void turn_left_or_right(float dist_upperbound,float dist_lowerbound,float speed,int factor,float least_time){
+void turn_left_or_right(float dist_upperbound,float dist_lowerbound,float speed,int factor,float least_time,int ping_use){
+    led_mode = 1;
+    LEDQueue.call(led_function);
     status = (factor == 1)?(speed>0)?3:4:(speed>0)?4:3;
     now_speed = abs(speed);
     float p[10];
@@ -211,313 +445,50 @@ void turn_left_or_right(float dist_upperbound,float dist_lowerbound,float speed,
     leastTimer.start();
     car.turn(speed,factor);
     while(leastTimer.read()<least_time){
-
-    }
-    while(1){
-        for(int i=0;i<10;i++){
-            if(i==9){
-                p[i] = (float)ping;
-                if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
-                    p_in_range+=1;
-                }
-            }
-            else {
-                p[i] = p[i+1];
-                if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
-                    p_in_range+=1;
-                }
-            }
-        }
-        if(p_in_range == 10){
-            car.stop();
-            now_speed = 0;
-            break;
-        }
-        p_in_range = 0;
         wait(0.01);
     }
+    if(ping_use==1){
+        while(1){
+            for(int i=0;i<10;i++){
+                if(i==9){
+                    //p[i] = (float)ping;
+                    p[i] = now_ping;
+                    if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
+                        p_in_range+=1;
+                    }
+                }
+                else {
+                    p[i] = p[i+1];
+                    if(p[i]<dist_upperbound&&p[i]>dist_lowerbound&&p[i]!=500){
+                        p_in_range+=1;
+                    }
+                }
+            }
+            if(p_in_range == 10){
+                car.stop();
+                now_speed = 0;
+                break;
+            }
+            p_in_range = 0;
+            wait(0.01);
+        }
+    }
+    else if(ping_use==0){
+        car.stop();
+    }
+    led_mode = 2;
+    LEDQueue.call(led_function);
     status = 5;
 }
 
-void first_straight(){
-    xbeeQueue.call(xbeeSend);
-    encoder_right.reset();
-    encoder_left.reset();
-    car.goStraight(50);
-    float p[10];
-    float p_avg;
-    for(int i=0;i<10;i++){
-        p[i]=500;
-    }
-    while(encoder_left.get_cm()<60 || encoder_right.get_cm()<60) {
-        wait_ms(50);
-        for(int i=0;i<10;i++){
-            if(i==9){
-                p[i] = (float)ping;
-            }
-            else {
-                p[i] = p[i+1];
-            }
-        }
-    }
-    while(1){
-        for(int i=0;i<10;i++){
-            if(i==9){
-                p[i] = (float)ping;
-                if(p[i]>20){
-                    p_avg+=1;
-                }
-            }
-            else {
-                p[i] = p[i+1];
-                if(p[i]>20){
-                    p_avg+=1;
-                }
-            }
-        }
-        if((float)p_avg>7){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        p_avg = 0;
-        wait(0.01);
-    }
 
-    led = 1;
-}
-void first_turn(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    /*
-    float p[10];
-    float p_avg = 0;
-    */
-    Turntimer.reset();
-    Turntimer.start();
-    car.turn(70,0.1);
-    //wait(1.25);
-    /*
-    while(Turntimer.read()<0.3){
-        for(int i=0;i<10;i++){
-            if(i==9){
-                p[i] = (float)ping;
-            }
-            else {
-                p[i] = p[i+1];
-            }
-        }
-    }
-    */
-        
-    //wait(1.25);
-    //led  = 0;
-    //car.stop();
-    //wait(2);
-    //car.turn(150,0.1);
-    while(1){
-        if((float)ping<40||(float)ping>120){
 
-        }
-        else {
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-    led = 1;
-    /*
-    wait(2);
-    car.stop();
-    */
-    // while(1){
-    //     pc.printf("%f\r\n",(float)ping);
-    // }
-}
-void second_straight(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.goStraight(50);
-    /*
-    while(encoder_left.get_cm()<30 || encoder_right.get_cm()<10) {
-        wait_ms(50);
-        //pc.printf("%f , %f\r\n",encoder_left.get_cm(),encoder_right.get_cm());
-    }
-    */
-    while(1){
-        if((float)ping>50){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-}
-void back_turn(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.turn(-80,0.1);
-    wait(1.1);
-    car.stop();
-    /*
-    Turntimer.reset();
-    Turntimer.start();
-    float timer_read;
-    while(1){
-        if((float)ping>25){
-        }
-        else{
-            car.stop();
-            timer_read = Turntimer.read();
-            break;
-        }
-        wait(0.1);
-    }
-    */
-    /*
-    wait(1);
-    car.turn(-150,0.1);
-    wait(timer_read);
-    car.stop();
-    /*
-    while(1){
-        pc.printf("%f\r\n",(float)ping);
-    }
-    */
-}
-void first_identify_number(){  
-    char s[21];
-    sprintf(s,"numberclassification");
-    uart.puts(s);
-    //pc.printf("send number classification\r\n");
-    wait(0.5);
-}
-void back_to_lot(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.goStraight(-100);
-    while(1){
-        if((float)ping<40){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-    car.stop();
-}
-void second_identify_number(){
-    char s[21];
-    sprintf(s,"numberclassification");
-    uart.puts(s);
-    //pc.printf("send number classification\r\n");
-    wait(0.5);
-}
-void third_straight(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.goStraight(100);
-    while(1){
-        if((float)ping>25){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-}
-void turn2(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.turn(150,-0.1);
-    wait(1.5);
-    led  = 0;
-    while(1){
-        if((float)ping<40||(float)ping>100){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-    led = 1;
-}
-void straght4(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.goStraight(100);
-    while(1){
-        if((float)ping>40){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-}
-void turn3(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.turn(150,-0.1);
-    wait(1.5);
-    led  = 0;
-    while(1){
-        if((float)ping<60||(float)ping>110){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-    led = 1;
-}
-void straght5(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.goStraight(100);
-    while(1){
-        if((float)ping>25){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-}
-void turn4(){
-    encoder_right.reset();
-    encoder_left.reset();
-    wait(1);
-    car.turn(150,-0.1);
-    wait(1.5);
-    led  = 0;
-    while(1){
-        if((float)ping<40||(float)ping>100){
-        }
-        else{
-            car.stop();
-            break;
-        }
-        wait(0.1);
-    }
-    led = 1;
+void call_end_car(){
+    if(debounc_sw3.read()>1){
+      endQueue.call(end_car);
+      debounc_sw3.reset();
+      debounc_sw3.start();
+   }
 }
 void call_Car_Go(){
     if(debounc_sw2.read()>1){
@@ -526,61 +497,182 @@ void call_Car_Go(){
       debounc_sw2.start();
    }
 }
-
+void end_car(){
+    status = 10;
+}
 void Car_Go(){
-    xbeeQueue.call(xbeeSend);
-    straight(25,20,50,10);
+    
+    straight2(150,0,25,1,0);
+    wait(0.5);
+    //identify_data_matrix();
+    //wait(1.2);
+    encoder_turn(70,1,25);
+    wait(0.5);
+    //-----------------------------------------------mission 1-----------------------------------------
+    straight2(70,0,25,1,0);
+    wait(1);
+    straight2(-70,0,0,2,30);
+    wait(0.5);
+    encoder_turn(-70,1,22);
+    wait(0.5);
+    straight2(-150,0,40,1,0);
+    wait(0.5);
+    identify_number();
+    wait(1.2);
+    straight2(150,0,0,2,25);
+    wait(0.5);
+    encoder_turn(70,-1,27);
+    wait(0.5);
+    straight2(150,0,0,2,32);
+    wait(0.5);
+    //-----------------------------------------------mission 1-----------------------------------------
+    encoder_turn(70,-1,23);
+    wait(0.5);
+    straight2(150,0,25,1,0);
+    wait(0.5);
+    encoder_turn(70,-1,25);
+    //-----------------------------------------------mission 2-----------------------------------------
+    straight2(150,0,0,2,45);
+    wait(0.5);
+    encoder_turn(70,-1,25);
+    wait(0.5);
+    straight2(150,0,0,2,40);
+    //identify_data_matrix();
+    //wait(1.2);
+    identify_object(1);
+    wait(1.2);
+    encoder_turn(-70,-1,6);
+    identify_object(2);
+    wait(1.2);
+    encoder_turn(70,-1,6);
+    encoder_turn(-70,1,6);
+    identify_object(3);
+    wait(1.2);
+    encoder_turn(70,1,6);
+    cal_result();
+    wait(1.2);
+    straight2(-150,0,0,2,40);
+    wait(0.5);
+    encoder_turn(-70,-1,25);
+    wait(0.5);
+    straight2(150,0,25,1,0);
+    wait(0.5);
+    
+    //-----------------------------------------------mission 2-----------------------------------------
+    encoder_turn(70,-1,25);
+    wait(0.5);
+    straight2(150,0,0,2,300);
+    wait(0.5);
+//------------------------------------------------------------------------------------------------------
+    /*
+    straight(25,20,120,5,1);
     wait(2);
-
 
     identify_data_matrix();
     wait(2);
 
-    
-    turn_left_or_right(25,20,50,1,3);
-    wait(2);
-    straight(40,35,50,5);
-    wait(2);
-    turn_left_or_right(25,20,-50,1,3);
+    encoder_turn(50,1);
     wait(2);
 
-
-    identify_number();
+    straight(45,30,120,0.5,1);          //45  35
     wait(2);
 
-
-    straight(50,40,-50,3);
+    encoder_turn(-50,1);
     wait(2);
 
+    straight(50,30,-120,0.5,1);  
+    wait(2);
 
     identify_number();
     wait(2);
+
+    straight(25,20,120,0.5,1);      //15 8   25 20
+    wait(2);
+
+    encoder_turn(50,0);
+    wait(2);
+
+    straight(40,30,120,0.5,1);    //30 25     25 20
+    wait(2);
+
+    encoder_turn(120,0);
+    wait(2);
+
+    straight(25,20,120,0.5,1);  //15 10
+    wait(2);
+    */
+
+/*//------------------------------------------------------------------------------------
+
+    identify_data_matrix();
+    wait(2);
+
+    straight(12,10,50,0,1);
+    wait(2);
+
+    
+    turn_left_or_right(1,1,50,1,1.1,0);  //105 95    25 20
+    wait(2);
+    straight(40,35,120,5,1);          //45  35
+    wait(2);
+    turn_left_or_right(1,1,-50,1,1.1,0);    //15 8    25 20
+    wait(2);
+
+
+    straight(50,40,-50,1,1);  
+    wait(2);
+
+    identify_number();
+    wait(2);
     
 
-    straight(25,20,50,3);
+    straight(15,8,50,1,1);      //15 8   25 20
     wait(2);
-    turn_left_or_right(25,20,50,-1,3);//75 65
+    turn_left_or_right(1,1,50,-1,1.1,0);//75 65    25 20
     wait(2);
-    straight(25,20,50,3);
+    straight(30,25,50,3,1);    //30 25     25 20
     wait(2);
-    turn_left_or_right(25,20,50,-1,3);//75 65
+    turn_left_or_right(1,1,50,-1,1.1,0);//130 120
     wait(2);
-    straight(25,20,50,10);
-/*
-first_straight();
-first_turn();
-second_straight();
-back_turn();
-first_identify_number();
-back_to_lot();
-second_identify_number();
-third_straight();
-turn2();
-straght4();
-turn3();
-straght5();
-turn4();
-*/
+    straight(25,20,120,5,1);  //15 10
+    wait(2);
+
+    turn_left_or_right(25,20,50,-1,1,1);   //105 95
+    wait(2);
+    straight(60,50,50,2,1);
+    wait(2);
+    turn_left_or_right(1,1,50,-1,2,0);    //change time
+    wait(2);
+    straight(1,1,50,2,0);  //change time
+    wait(2);
+    identify_data_matrix();
+    wait(2);
+
+    identify_object(1);
+    wait(2);
+    turn_left_or_right(1,1,50,-1,1,0);    //change time
+    wait(2);
+    identify_object(2);
+    wait(2);
+    turn_left_or_right(1,1,50,1,2,0);    //change time
+    wait(2);
+    identify_object(3);
+    wait(2);
+    cal_result();
+    wait(2);
+
+    straight(1,1,-50,2,0);  //change time
+    wait(2);
+    turn_left_or_right(1,1,50,1,2,0);    //change time
+    wait(2);
+    straight(15,10,50,3,1);
+    wait(2);
+
+    turn_left_or_right(1,1,50,-1,2,0);//change time
+    wait(2);
+
+    straight(1,1,120,5,0);//change time
+ */   
 }
 
 void reply_messange(char *xbee_reply, char *messange)
@@ -610,11 +702,14 @@ void check_addr(char *xbee_reply, char *messenger)
 }
 
 int main() {
-    /*--------------------------------------------------------------*/
-    printf("a");
+    led = 1;
+/*--------------------------------------------------------------*/
+    //printf("a");
+    /*
+    xbee.baud(9600);
+    
     char xbee_reply[4];
     // XBee setting
-    xbee.baud(9600);
     xbee.printf("+++");
     xbee_reply[0] = xbee.getc();
     xbee_reply[1] = xbee.getc();
@@ -631,16 +726,26 @@ int main() {
     xbee.printf("ATCN\r\n");
     reply_messange(xbee_reply, "exit AT mode");
     pc.printf("start\r\n");
-
-     /*--------------------------------------------------------------*/
-    
-    
-    led = 1;
+    */
+/*--------------------------------------------------------------*/
     debounc_sw2.reset();
     debounc_sw2.start();
+    debounc_sw3.reset();
+    debounc_sw3.start();
     uart.baud(9600);
     carThread.start(callback(&carQueue,&EventQueue::dispatch_forever));
     xbeeThread.start(callback(&xbeeQueue,&EventQueue::dispatch_forever));
+    endThread.start(callback(&endQueue,&EventQueue::dispatch_forever));
+    pingThread.start(callback(&pingQueue,&EventQueue::dispatch_forever));
+    LEDThread.start(callback(&LEDQueue,&EventQueue::dispatch_forever));
     sw2.rise(call_Car_Go);
+    sw3.rise(call_end_car);
+    pingQueue.call(ping_function);
+
+    led_mode = 2;
+    LEDQueue.call(led_function);
+    xbeeQueue.call(xbeeSend);
+
+    
     
 }

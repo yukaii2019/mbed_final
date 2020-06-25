@@ -7,6 +7,7 @@ mqttc = paho.Client()
 
 serdev = '/dev/ttyUSB0'
 s = serial.Serial(serdev, 9600)
+'''
 s.write("+++".encode())
 char = s.read(2)
 print("Enter AT mode.")
@@ -35,7 +36,7 @@ s.write("ATCN\r\n".encode())
 char = s.read(4)             
 print("Exit AT mode.")
 print(char.decode())
-
+'''
 host = "localhost"
 topic= "BBCAR_LOG"
 port = 1883
@@ -71,17 +72,19 @@ while(True):
     recv = (s.read(1)).decode()
     if(recv != '#'):
         tmp_log+=recv
-    elif(recv == '$'):
-        break
     else:
         ttt = time.localtime()
         tmp_log = tmp_log + "     Time:" +str(time.asctime(ttt))
         log.append(tmp_log)
-        tmp_log = ""
         mqttc.publish(topic, log[datanum])
         print(log[datanum])
         datanum = datanum+1
+        if 'finish' in tmp_log:
+            print("finish")
+            break
+        tmp_log = ""
 mesg = "end"  #ending to disconnect
+print("end")
 mqttc.publish(topic, mesg)
 s.close()
 #read = s.read(6)
