@@ -43,7 +43,7 @@ for i in range (0,log_num):  #PRINT TIME AND VELOCITY
     print(LOG[i])
 
 filename = "BBCAR_LOG"+"_"+str(time.strftime("%Y%m%d%H%M%S"))+".txt"
-with open(filename, "w") as f:
+with open(filename, "w",errors = 'ignore') as f:
     for line in LOG:
         f.write(line+"\n")
 print("Save file in", filename)

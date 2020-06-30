@@ -69,7 +69,7 @@ log = []
 datanum = 0
 
 while(True):
-    recv = (s.read(1)).decode()
+    recv = (s.read(1)).decode('utf-8', errors='ignore')
     if(recv != '#'):
         tmp_log+=recv
     else:

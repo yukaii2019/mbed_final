@@ -121,7 +121,7 @@ void xbeeSend(){
         wait(1);
     }
 }
-void encoder_turn(float speed ,int left,int step){
+void encoder_turn(float speed ,int left,int step,int mode,float t){
     led_mode = 1;
     LEDQueue.call(led_function);
     //status = (left == 1)?3:4;
@@ -130,22 +130,44 @@ void encoder_turn(float speed ,int left,int step){
     now_speed = abs(speed);
     encoder_right.reset();
     encoder_left.reset();
+    Turntimer.reset();
+    Turntimer.start();
     if(left == 1){
         car.turn(speed,1);
-        while(1){
-            if(encoder_right.get_steps()>=step){
-                break;
+        if(mode==0){
+            while(1){
+                if(encoder_right.get_steps()>=step){
+                    break;
+                }
+                wait(0.05);
             }
-            wait(0.05);
         }
+        else if (mode == 1){
+            while(1){
+                if(Turntimer.read()>t){
+                    break;
+                }
+                wait(0.05);
+            }
+        }  
     }
     else {
         car.turn(speed,-1);
-        while(1){
-            if(encoder_left.get_steps()>=step){
-                break;
+        if(mode==0){
+            while(1){
+                if(encoder_left.get_steps()>=step){
+                    break;
+                }
+                wait(0.05);
             }
-            wait(0.05);
+        }
+        else if (mode == 1){
+            while(1){
+                if(Turntimer.read()>t){
+                    break;
+                }
+                wait(0.05);
+            }
         }
     }
     car.stop();
@@ -231,12 +253,7 @@ void identify_number(){
     datamatrixTimer.reset();
     datamatrixTimer.start();
     while(1){
-        if(datamatrixTimer.read()>=7){
-            number[0] = 'f';
-            number[1] = 'a';
-            number[2] = 'i';
-            number[3] = 'l';
-            number[4] = '\0';
+        if(datamatrixTimer.read()>=3){
             break;
         }
         if(uart.readable()){
@@ -506,173 +523,63 @@ void Car_Go(){
     wait(0.5);
     //identify_data_matrix();
     //wait(1.2);
-    encoder_turn(70,1,25);
+    encoder_turn(70,1,21,0,0);
     wait(0.5);
     //-----------------------------------------------mission 1-----------------------------------------
     straight2(70,0,25,1,0);
     wait(1);
     straight2(-70,0,0,2,30);
     wait(0.5);
-    encoder_turn(-70,1,22);
+    encoder_turn(-70,1,22,0,0);
     wait(0.5);
     straight2(-150,0,40,1,0);
     wait(0.5);
     identify_number();
     wait(1.2);
-    straight2(150,0,0,2,25);
+    straight2(150,0,25,1,0);
     wait(0.5);
-    encoder_turn(70,-1,27);
+    encoder_turn(70,-1,24,0,0);
     wait(0.5);
     straight2(150,0,0,2,32);
     wait(0.5);
     //-----------------------------------------------mission 1-----------------------------------------
-    encoder_turn(70,-1,23);
+    encoder_turn(70,-1,21,0,0);
     wait(0.5);
     straight2(150,0,25,1,0);
     wait(0.5);
-    encoder_turn(70,-1,25);
+    encoder_turn(70,-1,25,0,0);
     //-----------------------------------------------mission 2-----------------------------------------
-    straight2(150,0,0,2,45);
+    straight2(150,0,0,2,47);
     wait(0.5);
-    encoder_turn(70,-1,25);
+    encoder_turn(70,-1,25,0,0);
     wait(0.5);
-    straight2(150,0,0,2,40);
+    straight2(150,0,0,2,30);
     //identify_data_matrix();
     //wait(1.2);
     identify_object(1);
     wait(1.2);
-    encoder_turn(-70,-1,6);
+    encoder_turn(-70,-1,6,0,0);
     identify_object(2);
     wait(1.2);
-    encoder_turn(70,-1,6);
-    encoder_turn(-70,1,6);
+    encoder_turn(70,-1,6,0,0);
+    encoder_turn(-70,1,6,0,0);
     identify_object(3);
     wait(1.2);
-    encoder_turn(70,1,6);
+    encoder_turn(70,1,6,0,0);
     cal_result();
     wait(1.2);
-    straight2(-150,0,0,2,40);
+    straight2(-150,0,0,2,30);
     wait(0.5);
-    encoder_turn(-70,-1,25);
+    encoder_turn(-70,-1,22,0,0);
     wait(0.5);
     straight2(150,0,25,1,0);
     wait(0.5);
     
     //-----------------------------------------------mission 2-----------------------------------------
-    encoder_turn(70,-1,25);
+    encoder_turn(70,-1,25,0,0);
     wait(0.5);
     straight2(150,0,0,2,300);
     wait(0.5);
-//------------------------------------------------------------------------------------------------------
-    /*
-    straight(25,20,120,5,1);
-    wait(2);
-
-    identify_data_matrix();
-    wait(2);
-
-    encoder_turn(50,1);
-    wait(2);
-
-    straight(45,30,120,0.5,1);          //45  35
-    wait(2);
-
-    encoder_turn(-50,1);
-    wait(2);
-
-    straight(50,30,-120,0.5,1);  
-    wait(2);
-
-    identify_number();
-    wait(2);
-
-    straight(25,20,120,0.5,1);      //15 8   25 20
-    wait(2);
-
-    encoder_turn(50,0);
-    wait(2);
-
-    straight(40,30,120,0.5,1);    //30 25     25 20
-    wait(2);
-
-    encoder_turn(120,0);
-    wait(2);
-
-    straight(25,20,120,0.5,1);  //15 10
-    wait(2);
-    */
-
-/*//------------------------------------------------------------------------------------
-
-    identify_data_matrix();
-    wait(2);
-
-    straight(12,10,50,0,1);
-    wait(2);
-
-    
-    turn_left_or_right(1,1,50,1,1.1,0);  //105 95    25 20
-    wait(2);
-    straight(40,35,120,5,1);          //45  35
-    wait(2);
-    turn_left_or_right(1,1,-50,1,1.1,0);    //15 8    25 20
-    wait(2);
-
-
-    straight(50,40,-50,1,1);  
-    wait(2);
-
-    identify_number();
-    wait(2);
-    
-
-    straight(15,8,50,1,1);      //15 8   25 20
-    wait(2);
-    turn_left_or_right(1,1,50,-1,1.1,0);//75 65    25 20
-    wait(2);
-    straight(30,25,50,3,1);    //30 25     25 20
-    wait(2);
-    turn_left_or_right(1,1,50,-1,1.1,0);//130 120
-    wait(2);
-    straight(25,20,120,5,1);  //15 10
-    wait(2);
-
-    turn_left_or_right(25,20,50,-1,1,1);   //105 95
-    wait(2);
-    straight(60,50,50,2,1);
-    wait(2);
-    turn_left_or_right(1,1,50,-1,2,0);    //change time
-    wait(2);
-    straight(1,1,50,2,0);  //change time
-    wait(2);
-    identify_data_matrix();
-    wait(2);
-
-    identify_object(1);
-    wait(2);
-    turn_left_or_right(1,1,50,-1,1,0);    //change time
-    wait(2);
-    identify_object(2);
-    wait(2);
-    turn_left_or_right(1,1,50,1,2,0);    //change time
-    wait(2);
-    identify_object(3);
-    wait(2);
-    cal_result();
-    wait(2);
-
-    straight(1,1,-50,2,0);  //change time
-    wait(2);
-    turn_left_or_right(1,1,50,1,2,0);    //change time
-    wait(2);
-    straight(15,10,50,3,1);
-    wait(2);
-
-    turn_left_or_right(1,1,50,-1,2,0);//change time
-    wait(2);
-
-    straight(1,1,120,5,0);//change time
- */   
 }
 
 void reply_messange(char *xbee_reply, char *messange)
@@ -702,6 +609,8 @@ void check_addr(char *xbee_reply, char *messenger)
 }
 
 int main() {
+    number[0] = '0';
+    number[1] = '\0';
     led = 1;
 /*--------------------------------------------------------------*/
     //printf("a");
